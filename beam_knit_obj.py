@@ -25,7 +25,8 @@ yarn_prop_pink = YarnType(51.5283,0.2,8.5532e-10)
 r_fake = 0.08
 #r_pink = 0.8059 #this is what was measured vs below is what worked
 #r_pink = 0.255
-r_pink = 0.245
+#r_pink = 0.245
+r_pink = 0.24
 
 StitchSize = namedtuple('StitchSize',['lam', 'w', 'gamma', 'CO', 'h', 'delta'])
 stitch_size_paper = StitchSize(3.73,1.15,0.24,0.71,1.14,0.41)
@@ -256,13 +257,16 @@ class knit_beam:
 
 		#set: top/bottom
 		y_con = 0.5*h
-
-		nodes_top = i_all.nodes.getByBoundingBox(xMin = 0-tol_bb, xMax = vf[0]+tol_bb,
+		xf = vf[0]
+		grip_width = 76.0 #mm
+		xL_bd = xf/2.0 - grip_width/2.0
+		xR_bd = xf/2.0 + grip_width/2.0
+		nodes_top = i_all.nodes.getByBoundingBox(xMin = xL_bd, xMax = xR_bd,
 		    yMin = (num_rows*y_offset + r + h/2) - y_con, yMax = num_rows*y_offset + r + h/2 + tol_bb,
 		    zMin =  -r -delta/2 -tol_bb, zMax = r + delta/2 +tol_bb,)
 		set_top = aa.Set(name = 'Set-top-bc', nodes = nodes_top)
 
-		nodes_bottom = i_all.nodes.getByBoundingBox(xMin = 0-tol_bb, xMax = vf[0]+tol_bb,
+		nodes_bottom = i_all.nodes.getByBoundingBox(xMin = xL_bd, xMax = xR_bd,
 		    yMin = y_offset - r - h/2 - tol_bb, yMax = (y_offset - r - h/2) + y_con,
 		    zMin = -r -delta/2 - tol_bb, zMax = r + delta/2 + tol_bb,)
 		set_bottom = aa.Set(name = 'Set-bottom-bc', nodes = nodes_bottom)
@@ -296,9 +300,9 @@ class knit_beam:
 			m.Equation(name = eqn_name_u1, terms = ((1.0, set_nameR, 1), (1.0, set_nameL, 1)))
 			m.Equation(name = eqn_name_u2, terms = ((1.0, set_nameR, 2), (-1.0, set_nameL, 2)))
 			m.Equation(name = eqn_name_u3, terms = ((1.0, set_nameR, 3), (-1.0, set_nameL, 3)))
-			# m.Equation(name = eqn_name_ur1, terms = ((1.0, set_nameR, 3), (-1.0, set_nameL, 4)))
-			# m.Equation(name = eqn_name_ur2, terms = ((1.0, set_nameR, 3), (-1.0, set_nameL, 5)))
-			# m.Equation(name = eqn_name_ur3, terms = ((1.0, set_nameR, 3), (-1.0, set_nameL, 6)))
+			# m.Equation(name = eqn_name_ur1, terms = ((1.0, set_nameR, 4), (-1.0, set_nameL, 4)))
+			# m.Equation(name = eqn_name_ur2, terms = ((1.0, set_nameR, 5), (-1.0, set_nameL, 5)))
+			# m.Equation(name = eqn_name_ur3, terms = ((1.0, set_nameR, 6), (-1.0, set_nameL, 6)))
 			#m.Equation(name='Constraint-top', terms=((1.0, 'Set-top-bc', 2), (-1.0, 'Set-RP', 2)))
 		#end
 		
@@ -314,6 +318,7 @@ class knit_beam:
 		#what if I do something kinda simple and restrict u1 to an eqn and let everthing else just be set/unset as before
 
 		#bd cond:top/bottom:
+		#instron grips are ~76mm wide
 		ref_pt = aa.ReferencePoint(point=(1.0, 1.0, 1.0))
 		set_rp = aa.Set(name='Set-RP', referencePoints=(aa.referencePoints[ref_pt.id], ))
 		m.Equation(name='Constraint-top', terms=((1.0, 'Set-top-bc', 2), (-1.0, 'Set-RP', 2)))
@@ -427,6 +432,8 @@ class knit_3d:
 		cut_size = self.cut_size
 		cut_point = self.cut_point
 
+		mesh_size = lam/32
+
 		#BCs top/bottom
 		disp_top = 11.0
 
@@ -461,7 +468,7 @@ class knit_3d:
 		t_cut_right = np.linspace(t_cut_2*lam, (num_cycles - 1)*lam, num=t_len_right)
 
 		v0 = self.xyz_swept(0)
-		vf = self.xyz_swept(t_all[t_len - 1])
+		vf = self.xyz_swept(t_all[-1])
 
 		v0_L = (v0[0],v0[1] + 2*y_offset, v0[2])
 		vf_R = (vf[0],vf[1] + 3*y_offset, vf[2])
@@ -474,12 +481,17 @@ class knit_3d:
 
 		for i in range(len(t_cut_left)):
 			left_pt = self.xyz_swept(t_cut_left[i])
-			right_pt = self.xyz_swept(t_cut_right[i])
 
 			left_pt = (left_pt[0], left_pt[1]+2*y_offset, left_pt[2])
+			
+			xyz_cut_left.append(left_pt)
+		#end
+
+		for i in range(len(t_cut_right)):
+			right_pt = self.xyz_swept(t_cut_right[i])
+
 			right_pt = (right_pt[0], right_pt[1] + 3*y_offset, right_pt[2])
 
-			xyz_cut_left.append(left_pt)
 			xyz_cut_right.append(right_pt)
 		#end
 
@@ -561,26 +573,13 @@ class knit_3d:
 		#set roller bd: edge
 		#tol = 0.1
 		face_list = []
+		
 		for i in range(num_rows):
 		    idx = 2*i;
 		    zero_face = (0,(i+1)*y_offset + h/2,z_offset + delta/2)
 		    face_list.append(i_all.faces.findAt((zero_face,)))
 		    end_face = i_all.faces.getByBoundingSphere(center = (vf[0],(i+1)*y_offset + h/2,z_offset + delta/2), radius=tol_bb)
 		    face_list.append(end_face)
-
-		    name_left_cur = 'Set-faceL-' + str(int(i+1))
-		    name_right_cur = 'Set-faceR-' + str(int(i+1))
-		    name_ref_pt_cur = 'Set-RP-bd' + str(int(i+1))
-		    ref_pt_bd_cur = aa.ReferencePoint(point=(2.0, i*y_offset, z_offset))
-
-		    eqn_nameL = 'u1-rowL-' + str(int(i+1))
-		    eqn_nameR = 'u1-rowR-' + str(int(i+1))
-		    face_left = aa.Set(faces = i_all.faces.findAt((zero_face,)), name = name_left_cur)
-		    face_right = aa.Set(faces = end_face, name = name_right_cur)
-		    set_ref_pt_bd_cur = aa.Set(name = name_ref_pt_cur, referencePoints = (aa.referencePoints[ref_pt_bd_cur.id],))
-
-		    m.Equation(name = eqn_nameL, terms = ((1.0, name_left_cur, 1), (1.0, name_ref_pt_cur, 1)))
-		    m.Equation(name = eqn_nameR, terms = ((1.0, name_right_cur, 1), (-1.0, name_ref_pt_cur, 1)))
 		#end
 		set_roller_edge = aa.Set(faces = face_list, name = 'Set-roller-bd')
 
@@ -659,16 +658,80 @@ class knit_3d:
 		    assignments=((GLOBAL, SELF, 'IntProp-contact'), ), stepName='Initial')
 
 		#mesh
-		p.seedPart(deviationFactor=0.1, minSizeFactor=0.1, size=lam/16)
+		p.seedPart(deviationFactor=0.1, minSizeFactor=0.1, size=mesh_size)
 		p.setElementType(elemTypes=(ElemType(
 		    elemCode=T3D2, elemLibrary=STANDARD), ), regions=set_wire)
+		#C3D8R
+		# p.setElementType(elemTypes=(ElemType(
+		#     elemCode=C3D8R, elemLibrary=STANDARD, secondOrderAccuracy=OFF, 
+		#     kinematicSplit=AVERAGE_STRAIN, hourglassControl=DEFAULT, 
+		#     distortionControl=DEFAULT), ElemType(elemCode=C3D6, elemLibrary=STANDARD), 
+		#     ElemType(elemCode=C3D4, elemLibrary=STANDARD)), regions=set_yarn)
+
+		#C3D8
 		p.setElementType(elemTypes=(ElemType(
-		    elemCode=C3D8R, elemLibrary=STANDARD, secondOrderAccuracy=OFF, 
-		    kinematicSplit=AVERAGE_STRAIN, hourglassControl=DEFAULT, 
-		    distortionControl=DEFAULT), ElemType(elemCode=C3D6, elemLibrary=STANDARD), 
-		    ElemType(elemCode=C3D4, elemLibrary=STANDARD)), regions=set_yarn)
+			elemCode=C3D8, elemLibrary=STANDARD), ElemType(elemCode=C3D6, 
+			elemLibrary=STANDARD), ElemType(elemCode=C3D4, elemLibrary=STANDARD)), 
+			regions=(set_yarn))
+
+		#C3D20R
+		# p.setElementType(elemTypes=(ElemType(
+		# 	elemCode=C3D20R, elemLibrary=STANDARD), ElemType(elemCode=C3D15, 
+		# 	elemLibrary=STANDARD), ElemType(elemCode=C3D10, elemLibrary=STANDARD)), 
+		# 	regions=(set_yarn))
+
+
 		p.generateMesh()
 		aa.regenerate()
+
+		#todo: here
+		face_nodes_0 = i_all.nodes.getByBoundingCylinder(center1 = (v0[0] - lam/64, v0[1], v0[2] + z_offset), 
+			center2 = (v0[0] + lam/64, v0[1], v0[2] + z_offset) , radius = r + y_offset/40)
+		face_nodes_f = i_all.nodes.getByBoundingCylinder(center1 = (vf[0] - lam/64, v0[1], v0[2] + z_offset), 
+			center2 = (vf[0] + lam/64, v0[1], v0[2] + z_offset) , radius = r + y_offset/40)
+		set_face_nodes_0 = aa.Set(name = 'set-nodes-test', nodes = face_nodes_0)
+		set_face_nodes_f = aa.Set(name = 'set-nodesF-test', nodes = face_nodes_f)
+		#printAB(set_face_nodes_0.nodes[0].coordinates)
+		#printAB(set_face_nodes_f.nodes[0].coordinates)
+		#printAB(face_nodes_0[0].coordinates)
+		num_nodes_edgeFace = len(set_face_nodes_0.nodes)
+		#printAB(num_nodes_edgeFace)
+
+		for i in range(num_rows):
+			#printAB("row " + str(i+1) + ":")
+			x0_cur = v0[0]; xf_cur = vf[0]; y_cur = (i+1)*y_offset + h/2; z_cur = vf[2] + z_offset;
+			face_nodes_0 = i_all.nodes.getByBoundingCylinder(center1 = (x0_cur - lam/64, y_cur, z_cur), 
+				center2 = (x0_cur + lam/64, y_cur, z_cur) , radius = r + y_offset/40)
+			face_nodes_f = i_all.nodes.getByBoundingCylinder(center1 = (xf_cur - lam/64, y_cur, z_cur), 
+				center2 = (xf_cur + lam/64, y_cur, z_cur) , radius = r + y_offset/30)
+
+			for j in range(num_nodes_edgeFace):
+				nodeL_coord = face_nodes_0[j].coordinates
+				nodeL_cur = i_all.nodes.getByBoundingSphere(center = nodeL_coord, radius = r/10)
+
+				if i == (cut_row - 1):
+					node_R_idx = j
+				else:
+					if j == 8:
+						node_R_idx = 8
+					else:
+						node_R_idx = -j % int(num_nodes_edgeFace - 1)
+					#end
+				#end
+
+				nodeR_coord = face_nodes_f[node_R_idx].coordinates
+
+				nodeR_cur = i_all.nodes.getByBoundingSphere(center = nodeR_coord, radius = r/10)
+				name_nodeL = 'set-row-' + str(i+1) + '-node-' + str(j+1) + '-L'
+				name_nodeR = 'set-row-' + str(i+1) + '-node-' + str(j+1) + '-R'
+
+				set_edge_nodeL = aa.Set(name = name_nodeL, nodes = nodeL_cur)
+				set_edge_nodeR = aa.Set(name = name_nodeR, nodes = nodeR_cur)
+
+				eqn_name_u1_cur = 'u1-row-' + str(i+1) + '-node-' + str(j+1)
+				m.Equation(name = eqn_name_u1_cur, terms = ((1.0, name_nodeL, 1), (1.0, name_nodeR, 1)))
+			#end
+		#end
 
 
 		#sets/bc top/bottom
@@ -681,7 +744,7 @@ class knit_3d:
 		    zMin = z_offset - r -delta/2 -tol_bb, 
 		    zMax = z_offset + r + delta/2 +tol_bb,)
 
-		aa.Set(name = 'Set-top-bc', nodes = nodes_top)
+		set_top = aa.Set(name = 'Set-top-bc', nodes = nodes_top)
 
 		nodes_bottom = i_all.nodes.getByBoundingBox(xMin = 0-tol_bb, 
 		    xMax = vf[0]+tol_bb,
@@ -690,7 +753,7 @@ class knit_3d:
 		    zMin = z_offset - r -delta/2 -tol_bb, 
 		    zMax = z_offset + r + delta/2 +tol_bb,)
 
-		aa.Set(name = 'Set-bottom-bc', nodes = nodes_bottom)
+		set_bottom = aa.Set(name = 'Set-bottom-bc', nodes = nodes_bottom)
 
 
 		#create reference point
@@ -702,14 +765,14 @@ class knit_3d:
 		m.HistoryOutputRequest(createStepName='Step-1', name='H-Output-rp', rebar=EXCLUDE, region=
 		    aa.sets['Set-RP'], sectionPoints=DEFAULT, variables=('U2', 'RF2'))
 
-		m.DisplacementBC(amplitude=UNSET, createStepName='Initial', 
-		    distributionType=UNIFORM, fieldName='', localCsys=None, name='BC-bottom', 
-		    region=aa.sets['Set-bottom-bc'], u1=SET, u2=SET, u3=SET, ur1=SET, ur2=SET, ur3=SET)
+
+		m.EncastreBC(createStepName='Initial', localCsys=None, name='BC-bottom', region=set_bottom)
+		m.EncastreBC(createStepName='Initial', localCsys=None, name='BC-top-initial', region=set_top)
 
 		m.TabularAmplitude(data=((0.0, 0.0), (1.0, 1.0)), name='Amp-ramp', smooth=SOLVER_DEFAULT, timeSpan=STEP)
 		m.DisplacementBC(amplitude='Amp-ramp', createStepName='Step-1'
 		    , distributionType=UNIFORM, fieldName='', fixed=OFF, localCsys=None, name='BC-top', region=aa.sets['Set-RP'], 
-		    u1=0, u2=disp_top, u3=0, ur1=0, ur2=0, ur3=0)
+		    u1=UNSET, u2=disp_top, u3=UNSET, ur1=UNSET, ur2=UNSET, ur3=UNSET)
 
 		m.fieldOutputRequests['F-Output-1'].setValues(numIntervals=72)
 
