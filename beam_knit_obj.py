@@ -13,6 +13,8 @@ from visualization import *
 from connectorBehavior import *
 
 from yarn_prop import *
+import numpy as np
+import os
 
 #helper functions
 def run_inp(jname, num_threads = 4):
@@ -106,19 +108,115 @@ class knit_beam:
 		return (x,y,z)
 	#end
 
+	def circ_up(self, s, res):
+		CO = self.CO; delta = self.delta;
+
+		x = CO/2.0 * res * np.cos(s)
+		y = CO/2.0 * np.sin(s)
+		z = delta/2.0
+
+		return (x,y,z)
+	#end
+
 	def change_friction(self, fric_coeff_):
 		self.fric_coeff = fric_coeff_
 	#end
 
 	def make_cut_knit(self, num_cycles, num_rows, cae_name, cut_point_, cut_size_):
-		self.cut_size = cut_size_
-		self.cut_point = cut_point_
+		self.cut_size = float(cut_size_)
+		self.cut_point = float(cut_point_)
 		cut_row = np.ceil(num_rows/2.0) #one indexed (sry!!)
 		self.make_knit(num_cycles, num_rows, cae_name, cut_row)
 	#end
 
 	def make_perf_knit(self, num_cycles, num_rows, cae_name):
 		self.make_knit(num_cycles, num_rows, cae_name)
+	#end
+
+	def make_geometry(self, num_cycles, num_rows, model_, part_, cut_row):
+		m = model_
+		p = part_
+
+		y_offset = self.CO; h = self.h; r = self.r; delta = self.delta; lam = self.lam
+
+		E = self.E; nu = self.nu; rho_density = self.rho_density; fric_coeff = self.fric_coeff;
+
+		num_cycles = float(num_cycles)
+		num_rows = int(num_rows)
+
+		cut_point = self.cut_point * lam
+		cut_size = self.cut_size * lam
+
+		z_offset = 0.0
+
+		t_len = 2000
+		t_len_circ = 100
+
+
+		xyz=[]
+		t_all = np.linspace(0,(num_cycles - 1)*lam,num=t_len)
+		t_circ = np.linspace(-np.pi/2, np.pi/2, endpoint = False, num = t_len_circ + 1)
+
+		v0 = self.xyz_swept(0)
+		vf = self.xyz_swept(t_all[-1])
+		v_both = [v0,vf]
+
+		for i in range(num_rows):
+			if i % 2 == 0:
+				#forward
+				i_mod = 1
+				i_shift = 0
+				x_offset = vf[0]
+			else:
+				#backward
+				i_mod = -1
+				i_shift = 1
+				x_offset = 0
+			#end
+
+			if i == cut_row - 1:
+				LB = cut_point - cut_size/2; UB = cut_point + cut_size/2; bd_both = [[LB,1],[UB,-1]];
+				first_cond = bd_both[i_mod*i_shift]; second_cond = bd_both[i_mod*i_shift + 1];
+				made_first_spline = 0
+
+				for j in range(len(t_all)):
+					t_cur = t_all[i_mod*(j + i_shift)]
+					if first_cond[1]*t_cur < first_cond[1]*first_cond[0]:
+						(x_cur, y_cur, z_cur) = self.xyz_swept(t_all[i_mod*(j + i_shift)])
+						y_cur += i*y_offset
+
+						xyz.append((x_cur, y_cur, z_cur))
+					elif second_cond[1]*t_cur < second_cond[1]*second_cond[0]:
+						(x_cur, y_cur, z_cur) = self.xyz_swept(t_all[i_mod*(j + i_shift)])
+						y_cur += i*y_offset
+
+						xyz.append((x_cur, y_cur, z_cur))
+					elif made_first_spline == 0:
+						made_first_spline = 1
+						p.WireSpline(points=xyz, meshable=ON,smoothClosedSpline=ON)
+						del xyz[:]
+					#end
+				#end
+			else:
+				for j in range(len(t_all)):
+					#appen
+					(x_cur, y_cur, z_cur) = self.xyz_swept(t_all[i_mod*(j + i_shift)])
+					y_cur += i*y_offset
+
+					xyz.append((x_cur, y_cur, z_cur))
+				#end
+			#end
+
+			if i < num_rows - 1:
+				for j in range(t_len_circ):
+					#circ up
+					(x_cur, y_cur, z_cur) = self.circ_up(t_circ[j + 1],i_mod)
+					x_cur += x_offset; y_cur += (i+1.5)*y_offset + h/2.0;
+					xyz.append((x_cur, y_cur, z_cur))
+				#end
+		#end
+
+		p.WireSpline(points=xyz, meshable=OFF,smoothClosedSpline=ON)
 	#end
 
 	def make_knit(self,num_cycles, num_rows, cae_name, cut_row = -1):
@@ -129,67 +227,14 @@ class knit_beam:
 		y_offset = self.CO; h = self.h; r = self.r; delta = self.delta; lam = self.lam
 
 		E = self.E; nu = self.nu; rho_density = self.rho_density; fric_coeff = self.fric_coeff;
+		mesh_size = lam/32; vf = self.xyz_swept((num_cycles - 1)*lam);
 
-		cut_size = self.cut_size
-		cut_point = self.cut_point
+		#BCs top/bottom
+		disp_top = 11.0
 
 		tol_bb = 2*r
 
-		num_cycles = float(num_cycles)
-		num_rows = int(num_rows)
-
-		disp_top = 11.0 #mm
-
-		#when num_cycles was 5.0 it was 1.5,2.5
-		t_cut_1 = cut_point - float(cut_size/2)
-		t_cut_2 = cut_point + float(cut_size/2)
-
-		t_len = 2000
-		t_len_cut = 1000
-
-
-		xyz_cut_left = []
-		xyz_cut_right = []
-		t_all = np.linspace(0,(num_cycles - 1)*lam,num=t_len)
-		t_cut_left = np.linspace(0,t_cut_1*lam, num=t_len_cut)
-		t_cut_right = np.linspace(t_cut_2*lam, (num_cycles - 1)*lam, num=t_len_cut)
-
-		v0 = self.xyz_swept(0)
-		vf = self.xyz_swept(t_all[t_len - 1])
-
-		xyz = [None] * t_len
-		xyz_left = [None] * t_len_cut
-		xyz_right = [None] * t_len_cut
-
-		#geometry/sketching
-		for i in range(num_rows):
-			if i == (cut_row - 1):
-				for j in range(t_len_cut):
-					pt_left = self.xyz_swept(t_cut_left[j])
-					pt_right = self.xyz_swept(t_cut_right[j])
-
-					y_L = pt_left[1] + i*y_offset
-					y_R = pt_right[1] + i*y_offset
-
-					xyz_left[j] = (pt_left[0], y_L, pt_left[2])
-					xyz_right[j] = (pt_right[0], y_R, pt_right[2])
-				#end
-				p.WireSpline(points=xyz_left, meshable=ON,smoothClosedSpline=ON)
-				p.WireSpline(points=xyz_right, meshable=ON,smoothClosedSpline=ON)
-			#end
-			else:
-				for j in range(len(t_all)):
-					point_cur = self.xyz_swept(t_all[j])
-					x_cur = point_cur[0]
-					y_cur = point_cur[1]
-					z_cur = point_cur[2]
-
-					point_et = (x_cur, y_cur + i*y_offset, z_cur)
-					xyz[j] = point_et
-				#end
-				p.WireSpline(points=xyz, meshable=ON,smoothClosedSpline=ON)
-			#end
-		#end
+		self.make_geometry(num_cycles, num_rows,m,p,cut_row)
 
 		#assembly
 		aa = m.rootAssembly
@@ -227,17 +272,6 @@ class knit_beam:
 		p.generateMesh()
 		aa.regenerate()
 
-		#set: roller bd
-		vert_left = i_all.vertices.getByBoundingBox(xMin = 0 - tol_bb, xMax = tol_bb,
-			yMin = y_offset - h/2 - tol_bb, yMax = num_rows*y_offset + h/2 + tol_bb,
-			zMin = -delta/2 - tol_bb, zMax = delta/2 + tol_bb)
-
-		vert_right = i_all.vertices.getByBoundingBox(xMin = vf[0] - tol_bb, xMax = vf[0] + tol_bb,
-			yMin = y_offset - h/2 - tol_bb, yMax = num_rows*y_offset + h/2 + tol_bb,
-			zMin = -delta/2 - tol_bb, zMax = delta/2 + tol_bb)
-
-		set_roller_edge = aa.Set(name='Set-roller-bd', vertices=[vert_left,vert_right])
-
 		#set: top/bottom
 		y_con = 0.5*h
 		xf = vf[0]
@@ -256,49 +290,6 @@ class knit_beam:
 
 		#step
 		m.ExplicitDynamicsStep(improvedDtMethod=ON, name='Step-1', previous='Initial')
-
-		#bd cond: roller/u1 anti?symmetric
-		# zero_face = (0,(i+1)*y_offset + h/2,z_offset + delta/2)
-	 #    face_list.append(i_all.faces.findAt((zero_face,)))
-	 #    end_face = i_all.faces.getByBoundingSphere(center = (vf[0],(i+1)*y_offset + h/2,z_offset + delta/2), radius=tol)
-	 # end_face = i_all.faces.getByBoundingSphere(center = (vf[0],(i+1)*y_offset + h/2,z_offset + delta/2), radius=tol)
-		for i in range(num_rows):
-			vert_cur_left = i_all.vertices.getByBoundingSphere(center = (v0[0],(i+1)*y_offset + h/2, delta/2), 
-				radius = tol_bb)
-			vert_cur_right = i_all.vertices.getByBoundingSphere(center = (vf[0],(i+1)*y_offset + h/2, delta/2), 
-				radius = tol_bb)
-
-			set_nameL = 'Set-nodeL-' + str(i+1)
-			set_nameR = 'Set-nodeR-' + str(i+1)
-			vert_left_set = aa.Set(name = set_nameL, vertices = vert_cur_left)
-			vert_right_set = aa.Set(name = set_nameR, vertices = vert_cur_right)
-
-			eqn_name_u1 = 'u1-row-' + str(i+1)
-			eqn_name_u2 = 'u2-row-' + str(i+1)
-			eqn_name_u3 = 'u3-row-' + str(i+1)
-			eqn_name_ur1 = 'ur1-row-' + str(i+1)
-			eqn_name_ur2 = 'ur2-row-' + str(i+1)
-			eqn_name_ur3 = 'ur3-row-' + str(i+1)
-
-			m.Equation(name = eqn_name_u1, terms = ((1.0, set_nameR, 1), (1.0, set_nameL, 1)))
-			m.Equation(name = eqn_name_u2, terms = ((1.0, set_nameR, 2), (-1.0, set_nameL, 2)))
-			m.Equation(name = eqn_name_u3, terms = ((1.0, set_nameR, 3), (-1.0, set_nameL, 3)))
-			# m.Equation(name = eqn_name_ur1, terms = ((1.0, set_nameR, 4), (-1.0, set_nameL, 4)))
-			# m.Equation(name = eqn_name_ur2, terms = ((1.0, set_nameR, 5), (-1.0, set_nameL, 5)))
-			# m.Equation(name = eqn_name_ur3, terms = ((1.0, set_nameR, 6), (-1.0, set_nameL, 6)))
-			#m.Equation(name='Constraint-top', terms=((1.0, 'Set-top-bc', 2), (-1.0, 'Set-RP', 2)))
-		#end
-		
-		# m.DisplacementBC(amplitude=UNSET, createStepName='Initial', distributionType=UNIFORM, fieldName='', 
-		# 	localCsys=None, name='BC-roller-edge', region=set_roller_edge, u1=UNSET, u2=UNSET,
-		# 	 u3=UNSET, ur1=SET, ur2=SET, ur3=SET)
-		#what we actually want is that each pair on L/R has periodic BC
-		#u1_L + u1_R = 0 they should be opposite??????
-		#u2_L - u2_R = 0 they should be the same
-		#u3_L - u3_R = 0
-		#ur1 is same, ur2 is same [??], ur3 is opp
-
-		#what if I do something kinda simple and restrict u1 to an eqn and let everthing else just be set/unset as before
 
 		#bd cond:top/bottom:
 		#instron grips are ~76mm wide
