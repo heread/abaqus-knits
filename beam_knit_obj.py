@@ -216,7 +216,7 @@ class knit_beam:
 				#end
 		#end
 
-		p.WireSpline(points=xyz, meshable=OFF,smoothClosedSpline=ON)
+		p.WireSpline(points=xyz, meshable=ON,smoothClosedSpline=ON)
 	#end
 
 	def make_knit(self,num_cycles, num_rows, cae_name, cut_row = -1):
