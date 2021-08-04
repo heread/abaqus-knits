@@ -149,7 +149,7 @@ class knit_beam:
 
 		z_offset = 0.0
 
-		t_len = 2000
+		t_len = 1000
 		t_len_circ = 100
 
 
@@ -214,8 +214,8 @@ class knit_beam:
 					x_cur += x_offset; y_cur += (i+1.5)*y_offset + h/2.0;
 					xyz.append((x_cur, y_cur, z_cur))
 				#end
+			#end
 		#end
-
 		p.WireSpline(points=xyz, meshable=ON,smoothClosedSpline=ON)
 	#end
 
@@ -227,7 +227,7 @@ class knit_beam:
 		y_offset = self.CO; h = self.h; r = self.r; delta = self.delta; lam = self.lam
 
 		E = self.E; nu = self.nu; rho_density = self.rho_density; fric_coeff = self.fric_coeff;
-		mesh_size = lam/32; vf = self.xyz_swept((num_cycles - 1)*lam);
+		mesh_size = lam/64; vf = self.xyz_swept((num_cycles - 1)*lam);
 
 		#BCs top/bottom
 		disp_top = 11.0
@@ -251,12 +251,13 @@ class knit_beam:
 		mat_yarn.Density(table=((rho_density, ), ))
 
 		#set knit
-		edges_yarn = p.edges.getByBoundingBox(xMin = 0-tol_bb, 
-		    xMax = vf[0]+tol_bb,
+		edges_yarn = p.edges.getByBoundingBox(xMin = 0- y_offset/2 - tol_bb, 
+		    xMax = vf[0] + y_offset/2 + tol_bb,
 		    yMin = y_offset - h/2 - tol_bb, 
 		    yMax = num_rows*y_offset + h/2 + tol_bb,
 		    zMin = -delta/2 - tol_bb, 
 		    zMax = delta/2 + tol_bb,)
+		#printAB(edges_yarn)
 		set_yarn = p.Set(edges = edges_yarn, name='Set-yarn')
 
 		#section
@@ -275,7 +276,8 @@ class knit_beam:
 		#set: top/bottom
 		y_con = 0.5*h
 		xf = vf[0]
-		grip_width = 76.0 #mm
+		#grip_width = 76.0 #mm
+		grip_width = 300.0 #mm
 		xL_bd = xf/2.0 - grip_width/2.0
 		xR_bd = xf/2.0 + grip_width/2.0
 		nodes_top = i_all.nodes.getByBoundingBox(xMin = xL_bd, xMax = xR_bd,
@@ -310,13 +312,13 @@ class knit_beam:
 		    aa.sets['Set-RP'], sectionPoints=DEFAULT, variables=('U2', 'RF2'))
 
 		#contact prop (total guesswork here)
-		m.ContactProperty('IntProp-contact')
-		m.interactionProperties['IntProp-contact'].TangentialBehavior(
+		cont_prop = m.ContactProperty('IntProp-contact')
+		cont_prop.TangentialBehavior(
 		    dependencies=0, directionality=ISOTROPIC, elasticSlipStiffness=None, 
 		    formulation=PENALTY, fraction=0.005, maximumElasticSlip=FRACTION, 
 		    pressureDependency=OFF, shearStressLimit=None, slipRateDependency=OFF, 
 		    table=((fric_coeff, ), ), temperatureDependency=OFF)
-		m.interactionProperties['IntProp-contact'].NormalBehavior(
+		cont_prop.NormalBehavior(
 		    allowSeparation=ON, constraintEnforcementMethod=DEFAULT, 
 		    pressureOverclosure=HARD)
 
