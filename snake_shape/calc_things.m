@@ -9,7 +9,7 @@ end
 
 idx_min = min(nonzeros((1:length(bd_mid)).*(x_val<=bd_mid)));
 idx_min_mod4 = mod(idx_min,4);
-U_num = mod(idx_min,2);
+U_num = ceil(idx_min/2);
 d_fin = bd_mid(end) - bd_mid(end-1);
 
 y_bd = @(t) fxns.y(t,pi/2);
@@ -37,17 +37,31 @@ elseif idx_min_mod4 == 1
     %todo: add support (check?) for arbitrary L
 elseif idx_min_mod4 == 2
     %cyc spin up case- todo: mult rows??
-    x_adj = x_val - T_adj ; p_val = x_adj / r;
+    add_factor_x = 0; add_factor_y = 0;
+    x_adj = x_val - U_num*T_adj ; p_val = x_adj / r;
+    
+    if U_num > 1
+        d = x_val - bd_mid(idx_min - 2);
+        add_factor_x = d + r*pi/2 + T_adj/r * fxns.np_t(t_set) - r*p_val;
+        add_factor_y = (2*d + T_adj)*t_set.*sin(pi*t_set) + 2*fxns.y(t_set,pi/2);
+    end
+    
     x_t = @(t) fxns.x(t,p_val) + added_L;
     y_t = @(t) fxns.y(t,p_val);
-    ret(1,:) = x_t(t_set);
-    ret(2,:) = y_t(t_set);
+    ret(1,:) = x_t(t_set) + add_factor_x;
+    ret(2,:) = y_t(t_set) + add_factor_y;
 elseif idx_min_mod4 == 3
     %d spin up case- todo: mult rows???
     x_bd = @(t) fxns.x(t,pi/2) + added_L; y_bd = @(t) fxns.y(t,pi/2);
     d = x_val - bd_mid(idx_min-1);
-    ret(1,:) = d/r * fxns.np_t(t_set) + x_bd(t_set);
-    ret(2,:) = d/r * fxns.mp_t(t_set) + y_bd(t_set);
+    add_factor_x = 0; add_factor_y = 0;
+    if U_num > 2 %U_num = 4 for the first one
+        add_factor_x = T_adj/r * (r + fxns.np_t(t_set));
+        add_factor_y = 3*T_adj/r * fxns.mp_t(t_set);
+    end
+    
+    ret(1,:) = d/r * fxns.np_t(t_set) + x_bd(t_set) + add_factor_x;
+    ret(2,:) = d/r * (U_num - 1) * fxns.mp_t(t_set) + (U_num - 1) * y_bd(t_set) + add_factor_y;
 end
 
 end
