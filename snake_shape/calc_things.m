@@ -3,14 +3,12 @@ bd_mid = info.midBounds; added_L = info.addL; r = info.r; T = 2*pi*r;
 bd_mid(end+1) = info.L; %append L to end so min works
 T_adj = info.T_adj;
 ret = zeros(2,length(t_set));
-if info.num_rows > 2
-    d_max = bd_mid(4) - bd_mid(2);
-end
 
 idx_min = min(nonzeros((1:length(bd_mid)).*(x_val<=bd_mid)));
 idx_min_mod4 = mod(idx_min,4);
-U_num = ceil(idx_min/2);
-d_fin = bd_mid(end) - bd_mid(end-1);
+U_num = floor((idx_min - 1)/2);
+S_num = floor((idx_min - 1)/4);
+triag_num = (U_num - 1)*U_num/2;
 
 y_bd = @(t) fxns.y(t,pi/2);
 
@@ -20,48 +18,55 @@ if idx_min == 1
     %trivial case
     ret(1,:) = x_val*ones(1,length(t_set));
     ret(2,:) = zeros(1,length(t_set));
+elseif idx_min == 2
+    %original cyc up case
+    x_adj = x_val - T_adj ; p_val = x_adj / r;
+    x_t = @(t) fxns.x(t,p_val) + added_L;
+    y_t = @(t) fxns.y(t,p_val);
+    
+    ret(1,:) = x_t(t_set);
+    ret(2,:) = y_t(t_set);
+elseif idx_min == 3
+    %original d up case
+    x_bd = @(t) fxns.x(t,pi/2) + added_L; y_bd = @(t) fxns.y(t,pi/2);
+    d = x_val - bd_mid(idx_min-1);
+    
+    ret(1,:) = d/r * fxns.np_t(t_set) + x_bd(t_set);
+    ret(2,:) = d/r * fxns.mp_t(t_set) + y_bd(t_set);
 elseif idx_min_mod4 == 0
     %cyc spin down case
     x_bd = @(t) fxns.x(t,pi/2) + added_L;
     d = x_val - bd_mid(idx_min-2);
-    x_adj = x_val - 2*T_adj; p_val = x_adj / r;
+    x_adj = x_val - (U_num + 1)*T_adj; p_val = x_adj / r;
     x_t = @(t) fxns.x(t,p_val);
     y_t = @(t) fxns.y(t,p_val);
-    ret(1,:) = -x_t(t_set) + r*(2*pi + p_val) + d/r * fxns.np_t(t_set) + x_bd(t_set);
-    ret(2,:) = y_t(t_set) + d/r * fxns.mp_t(t_set) + y_bd(t_set);
+    
+    ret(1,:) = -x_t(t_set) + r*(2*pi + p_val) + d/r * fxns.np_t(t_set) + x_bd(t_set) + S_num * T_adj/r * (r + fxns.np_t(t_set));
+    ret(2,:) = y_t(t_set) + U_num *(d/r * fxns.mp_t(t_set) + y_bd(t_set)) + triag_num * T_adj/r * fxns.mp_t(t_set);
 elseif idx_min_mod4 == 1
     %d spin down case
+
     d = x_val - bd_mid(idx_min-1);
-    ret(1,:) = d/r * fxns.nnp_t(t_set) + r*5*pi/2 + T_adj/r * fxns.np_t(t_set) + added_L;
-    ret(2,:) = d/r * fxns.mnp_t(t_set) + T_adj/r * fxns.mp_t(t_set) + 2*y_bd(t_set);
+    ret(1,:) = d/r * r + r*5*pi/2 + T_adj/r * (S_num*fxns.np_t(t_set) + (S_num-1)*r) + added_L;
+    ret(2,:) = d/r * U_num * fxns.mp_t(t_set) + triag_num*T_adj/r * fxns.mp_t(t_set) + U_num*y_bd(t_set);
     %todo: add support (check?) for arbitrary L
 elseif idx_min_mod4 == 2
     %cyc spin up case- todo: mult rows??
-    add_factor_x = 0; add_factor_y = 0;
-    x_adj = x_val - U_num*T_adj ; p_val = x_adj / r;
-    
-    if U_num > 1
-        d = x_val - bd_mid(idx_min - 2);
-        add_factor_x = d + r*pi/2 + T_adj/r * fxns.np_t(t_set) - r*p_val;
-        add_factor_y = (2*d + T_adj)*t_set.*sin(pi*t_set) + 2*fxns.y(t_set,pi/2);
-    end
-    
+    x_adj = x_val - (U_num + 1)*T_adj ; p_val = x_adj / r;
+    d = x_val - bd_mid(idx_min - 2);
+
     x_t = @(t) fxns.x(t,p_val) + added_L;
     y_t = @(t) fxns.y(t,p_val);
-    ret(1,:) = x_t(t_set) + add_factor_x;
-    ret(2,:) = y_t(t_set) + add_factor_y;
+    %ret(1,:) = x_t(t_set) + S_num * T_adj/r * fxns.np_t(t_set) + add_factor_x;
+    ret(1,:) = x_t(t_set) + d + r*pi/2 - r*p_val + T_adj/r * (S_num * fxns.np_t(t_set) + (S_num-1) * r);
+    ret(2,:) = y_t(t_set) + fxns.mp_t(t_set)/r*(U_num*d + triag_num*T_adj) + U_num*fxns.y(t_set,pi/2);
 elseif idx_min_mod4 == 3
     %d spin up case- todo: mult rows???
     x_bd = @(t) fxns.x(t,pi/2) + added_L; y_bd = @(t) fxns.y(t,pi/2);
     d = x_val - bd_mid(idx_min-1);
-    add_factor_x = 0; add_factor_y = 0;
-    if U_num > 2 %U_num = 4 for the first one
-        add_factor_x = T_adj/r * (r + fxns.np_t(t_set));
-        add_factor_y = 3*T_adj/r * fxns.mp_t(t_set);
-    end
     
-    ret(1,:) = d/r * fxns.np_t(t_set) + x_bd(t_set) + add_factor_x;
-    ret(2,:) = d/r * (U_num - 1) * fxns.mp_t(t_set) + (U_num - 1) * y_bd(t_set) + add_factor_y;
+    ret(1,:) = d/r * fxns.np_t(t_set) + x_bd(t_set) + S_num * T_adj/r * (r + fxns.np_t(t_set));
+    ret(2,:) = d/r * U_num * fxns.mp_t(t_set) + U_num * y_bd(t_set) + triag_num*T_adj/r * fxns.mp_t(t_set);
 end
 
 end
